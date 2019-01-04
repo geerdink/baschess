@@ -25,9 +25,12 @@ var init = function() {
 
     var possibleMoves = game.moves({square: source});
     for (var i = 0; i < possibleMoves.length; i++) {
-      var possibleMove = possibleMoves[i];
-      var possibleSquare = possibleMove.replace('#', '').substr(possibleMove.length - 2, 2)
-      console.log(possibleSquare);
+      var possibleMove = possibleMoves[i]
+        .replace('#', '')
+        .replace('+', '');
+
+      var possibleSquare = possibleMove
+        .substr(possibleMove.length - 2, 2)
 
       boardEl.find('.square-' + possibleSquare).addClass('highlight-possible-move');
     }
