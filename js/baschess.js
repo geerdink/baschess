@@ -8,15 +8,25 @@ var board,
   squareClass = 'square-55d63',
   squareToHighlight,
   colorToHighlight,
-  playerColor;
+  playerColor,
+  computerColor,
+  orientation;
 
 var init = function() {
+  console.log('__ init');
+
   // determine whether user has black or white
   // if playtype === 'human_vs_computer'
-  playerColor = 'white';
+  playerColor = 'w';
+  computerColor = 'b';
+  orientation = 'white';
   if (Math.random() < 0.5) {
-    playerColor = 'black';
+    playerColor = 'b';
+    computerColor = 'w';
+    orientation = 'black';
   }
+
+  console.log('Player is ' + orientation);
 
   var cfg = {
     draggable: true,
@@ -24,26 +34,33 @@ var init = function() {
     onDragStart: onDragStart,
     onDrop: onDrop,
     onSnapEnd: onSnapEnd,
-    orientation: playerColor
+    orientation: orientation
   };
 
   status = 'Starting new game!';
   game = new Chess(),
   board = ChessBoard('board', cfg);
   
-  if (playerColor === 'black') {
+  if (playerColor === 'b') {
     // computer makes first move
     computerMove();
+    board.position(game.fen());
   }
-
-  updateStatus();
 };
 
 var computerMove = function() {
+  console.log('__ computerMove');
+
   var possibleMoves = game.moves();
 
   var move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
+  this.console.log('Computer move: ' + move);
   game.move(move);
+
+  var to = getSquare(move);
+  var m = {to: to, color: computerColor};
+  
+  highlightMove(m);
 
   updateStatus();
 }
@@ -51,6 +68,7 @@ var computerMove = function() {
 // do not pick up pieces if the game is over
 // only pick up pieces for the side to move
 var onDragStart = function(source, piece, position, orientation) {
+  console.log('__ onDragStart');
   
   if (game.game_over() === true ||
       (game.turn() === 'w' && piece.search(/^b/) !== -1) ||
@@ -63,13 +81,7 @@ var onDragStart = function(source, piece, position, orientation) {
 
   var possibleMoves = game.moves({square: source});
   for (var i = 0; i < possibleMoves.length; i++) {
-    var possibleMove = possibleMoves[i]
-      .replace('#', '')
-      .replace('+', '');
-
-    var possibleSquare = possibleMove
-      .substr(possibleMove.length - 2, 2)
-
+    var possibleSquare = getSquare(possibleMoves[i])
     boardEl.find('.square-' + possibleSquare).addClass('highlight-possible-move');
   }
 
@@ -92,6 +104,8 @@ var onDragStart = function(source, piece, position, orientation) {
 };
 
 var onDrop = function(source, target) {
+  console.log('__ onDrop');
+
   // TODO: remove all optional moves
   boardEl.find('*').removeClass('highlight-possible-move');
 
@@ -105,7 +119,22 @@ var onDrop = function(source, target) {
   // illegal move
   if (move === null) return 'snapback';
 
-  // highlight move
+  highlightMove(move);
+
+  updateStatus();
+
+  computerMove();
+};
+
+// update the board position after the piece snap 
+// for castling, en passant, pawn promotion
+var onSnapEnd = function() {
+  board.position(game.fen());
+};
+
+var highlightMove = function(move) {
+  console.log('__ highlightMove ' + move.to);
+
   boardEl = $('#board');
   if (move.color === 'w') {
     boardEl.find('.' + squareClass).removeClass('highlight-white');
@@ -122,19 +151,19 @@ var onDrop = function(source, target) {
 
   boardEl.find('.square-' + squareToHighlight)
       .addClass('highlight-' + colorToHighlight);
+}
 
-  updateStatus();
+var getSquare = function(move) {
+  var cleanedMove = move
+    .replace('#', '')
+    .replace('+', '');
 
-  computerMove();
-};
-
-// update the board position after the piece snap 
-// for castling, en passant, pawn promotion
-var onSnapEnd = function() {
-  board.position(game.fen());
-};
+  return cleanedMove.substr(cleanedMove.length - 2, 2)
+}
 
 var updateStatus = function() {
+  console.log('__ updateStatus');
+
   var status = '';
 
   var moveColor = 'White';
