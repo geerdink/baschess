@@ -51,9 +51,8 @@ var init = function() {
 var computerMove = function() {
   console.log('__ computerMove');
 
-  var possibleMoves = game.moves();
+  var move = determineNextMove(game);
 
-  var move = possibleMoves[Math.floor(Math.random() * possibleMoves.length)];
   this.console.log('Computer move: ' + move);
   game.move(move);
 
@@ -61,7 +60,6 @@ var computerMove = function() {
   var m = {to: to, color: computerColor};
   
   highlightMove(m);
-
   updateStatus();
 }
 
@@ -120,7 +118,6 @@ var onDrop = function(source, target) {
   if (move === null) return 'snapback';
 
   highlightMove(move);
-
   updateStatus();
 
   computerMove();
@@ -156,7 +153,10 @@ var highlightMove = function(move) {
 var getSquare = function(move) {
   var cleanedMove = move
     .replace('#', '')
-    .replace('+', '');
+    .replace('+', '')
+    .replace('=', '')
+    .replace('Q', '')
+    .replace('x', '')
 
   return cleanedMove.substr(cleanedMove.length - 2, 2)
 }
