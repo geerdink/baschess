@@ -1,6 +1,6 @@
 var pieceScores = {
-    'p': 1, 'b': 3, 'n': 3, 'r': 5, 'q': 8, 'k': 999,
-    'P': 1, 'B': 3, 'N': 3, 'R': 5, 'Q': 8, 'K': 999
+    'p': 1, 'b': 3, 'n': 3, 'r': 5, 'q': 9, 'k': 1000,
+    'P': 1, 'B': 3, 'N': 3, 'R': 5, 'Q': 9, 'K': 1000
 }
 
 var calculateScore = function(game, color) {
@@ -15,6 +15,14 @@ var calculateScore = function(game, color) {
     for (var i = 0; i < pieces.length; i ++) {
         score = score + pieceScores[pieces[i]];
     }
+
+    // if any piece of own color is on the E or D columns, add points
+
+    // if any piece of own color is attacking the E or D columns, add points
+
+    // if any piece can give check, add points
+
+    
 
     console.log('Score: ' + score)
     return score;

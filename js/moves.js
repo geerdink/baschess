@@ -10,10 +10,17 @@ var board,
   colorToHighlight,
   playerColor,
   computerColor,
-  orientation;
+  orientation,
+  stockfish = new Worker('js/stockfish/src/stockfish.js');;
 
 var init = function() {
   console.log('__ init');
+
+  engine.postMessage('go depth 15');
+
+  engine.onmessage = function(event) {
+    console.log(event.data);
+  };
 
   // determine whether user has black or white
   // if playtype === 'human_vs_computer'
