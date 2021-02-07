@@ -11,7 +11,7 @@ var board,
   playerColor,
   computerColor,
   orientation,
-  stockfish = new Worker('js/stockfish/src/stockfish.js');;
+  engine = new Worker('js/stockfish/src/stockfish.asm.js');;
 
 var init = function() {
   console.log('__ init');
@@ -45,7 +45,7 @@ var init = function() {
   };
 
   status = 'Starting new game!';
-  game = new Chess(),
+  game = new Chess();
   board = ChessBoard('board', cfg);
   
   if (playerColor === 'b') {
