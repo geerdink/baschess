@@ -6,13 +6,12 @@ function engineGame(options) {
 
     // the computer engine plays agains the human
     var computerEngine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
-    var computerEvaler = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
+    var computerEvaluator = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
     var computerEngineStatus = {};
     var isComputerEngineRunning = false;
 
     // the human stockfish engine evaluates every human move, to give real-time feedback
     var humanEngine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
-    var humanEvaler = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
     var humanEngineStatus = {};
     var isHumanEngineRunning = false;
 
@@ -23,6 +22,8 @@ function engineGame(options) {
     var evaluation_el = document.getElementById("evaluation");
     var announced_game_over;
     var squareClass = 'square-55d63';
+
+    var bestNextMove = null;
 
     setInterval(function ()
     {
@@ -141,7 +142,7 @@ function engineGame(options) {
      * Prepare a move to make, by human or computer
      */
     function prepareMove() {
-        console.log('Preparing move...')
+        // console.log('Preparing move...')
 
         stopClock();
         $('#pgn').text(game.pgn());
@@ -152,32 +153,18 @@ function engineGame(options) {
         if(!game.game_over()) {
             if(turn !== playerColor) {
                 // calculate computer move
-                uciCmd('position startpos moves' + get_moves());
-                uciCmd('position startpos moves' + get_moves(), computerEvaler);
+                uciCmd('position startpos moves' + get_moves(), computerEngine);
                 evaluation_el.textContent = "";
-                uciCmd("eval", computerEvaler);
+                uciCmd("eval", computerEngine);
                 
                 if (time && time.wtime) {
-                    uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc);
+                    uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc, computerEngine);
                 } else {
-                    uciCmd("go " + (time.depth ? "depth " + time.depth : ""));
+                    uciCmd("go " + (time.depth ? "depth " + time.depth : ""), computerEngine);
                 }
                 isComputerEngineRunning = true;
             } else {
-                console.log('Evaluating your move...')
-
-                // calculate computer move
-                uciCmd('position startpos moves' + get_moves());
-                uciCmd('position startpos moves' + get_moves(), humanEvaler);
-                uciCmd("eval", humanEvaler);
-
-                if (time && time.wtime) {
-                    uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc, humanEngine);
-                } else {
-                    uciCmd("go " + (time.depth ? "depth " + time.depth : ""), humanEngine);
-                }
-
-                isHumanEngineRunning = true;
+                // console.log('Player to move')
             }
 
             if(game.history().length >= 2 && !time.depth && !time.nodes) {
@@ -190,8 +177,8 @@ function engineGame(options) {
     // Computer Engine moves //
     ///////////////////////////
     
-    computerEvaler.onmessage = function(event) {
-        console.log('Computer Evaler callback 1')
+    computerEvaluator.onmessage = function(event) {
+        // console.log('Computer evaluator callback 1')
         var line;
         
         if (event && typeof event === "object") {
@@ -200,7 +187,7 @@ function engineGame(options) {
             line = event;
         }
         
-        // console.log("evaler: " + line);
+        // console.log("evaluator: " + line);
         
         /// Ignore some output.
         if (line === "uciok" || line === "readyok" || line.substr(0, 11) === "option name") {
@@ -214,7 +201,7 @@ function engineGame(options) {
     }
 
     computerEngine.onmessage = function(event) {
-        console.log('Computer Evaler callback 2')
+        // console.log('Computer evaluator callback 2')
         var line;
         
         if (event && typeof event === "object") {
@@ -222,7 +209,8 @@ function engineGame(options) {
         } else {
             line = event;
         }
-        console.log("Reply: " + line)
+
+        // console.log("Computer engine reply: " + line)
         if(line === 'uciok') {
             computerEngineStatus.engineLoaded = true;
         } else if(line === 'readyok') {
@@ -237,15 +225,18 @@ function engineGame(options) {
                 game.move({from: match[1], to: match[2], promotion: match[3]});
                 highlightMove({from: match[1], to: match[2], promotion: match[3]})
 
+                // get the best move possible for the human
+                getHumanEvaluation()
+
                 prepareMove();
-                uciCmd("eval", computerEvaler)
+                uciCmd("eval", computerEngine)
                 evaluation_el.textContent = "";
                 //uciCmd("eval");
             /// Is it sending feedback?
             } else if(match = line.match(/^info .*\bdepth (\d+) .*\bnps (\d+)/)) {
                 computerEngineStatus.search = 'Depth: ' + match[1] + ' Nps: ' + match[2];
             }
-            
+
             /// Is it sending feed back with a score?
             if(match = line.match(/^info .*\bscore (\w+) (-?\d+)/)) {
                 var score = parseInt(match[2]) * (game.turn() === 'w' ? 1 : -1);
@@ -256,7 +247,7 @@ function engineGame(options) {
                 } else if(match[1] === 'mate') {
                     computerEngineStatus.score = 'Mate in ' + Math.abs(score);
                 }
-                
+
                 /// Is the score bounded?
                 if(match = line.match(/\b(upper|lower)bound\b/)) {
                     computerEngineStatus.score = ((match[1] === 'upper') === (game.turn() === 'w') ? '<= ' : '>= ') + computerEngineStatus.score
@@ -270,8 +261,27 @@ function engineGame(options) {
     // Human Engine evaluations //
     //////////////////////////////
 
-    humanEvaler.onmessage = function(event) {
-        console.log('Human Evaler callback')
+    /**
+     * Find the best move for a human. This function is called after each computer move.
+     */
+    function getHumanEvaluation() {
+        console.log('Finding the best human move...')
+
+        // calculate best human move
+        uciCmd('position startpos moves' + get_moves(), humanEngine);
+        uciCmd("eval", humanEngine);
+
+        if (time && time.wtime) {
+            uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc, humanEngine);
+        } else {
+            uciCmd("go " + (time.depth ? "depth " + time.depth : ""), humanEngine);
+        }
+
+        isHumanEngineRunning = true;
+    }
+
+    humanEngine.onmessage = function(event) {
+        console.log('Human evaluator callback 2')
         var line;
 
         if (event && typeof event === "object") {
@@ -280,9 +290,28 @@ function engineGame(options) {
             line = event;
         }
 
-        console.log('Reply from human evaler: ' + line);
+        // console.log("Computer engine reply: " + line)
+        if(line === 'uciok') {
+            computerEngineStatus.engineLoaded = true;
+        } else if(line === 'readyok') {
+            computerEngineStatus.engineReady = true;
+        } else {
+            var match = line.match(/^bestmove ([a-h][1-8])([a-h][1-8])([qrbn])?/);
+            //console.log('Reply from human evaluator: ' + line);
+            /// Did the AI move?
+            if(match) {
+                isHumanEngineRunning = false;
 
-        isHumanEngineRunning = false;
+                bestNextMove = {from: match[1], to: match[2]};
+                console.log(`Best move for human: ${bestNextMove.from} to ${bestNextMove.to}`)
+
+            } else if(match = line.match(/^info .*\bdepth (\d+) .*\bnps (\d+)/)) {
+                humanEngineStatus.search = 'Depth: ' + match[1] + ' Nps: ' + match[2];
+            }
+        }
+
+        // We have now find the best human move. Store it in a temp file, and compare it once the human makes the move.
+
     }
 
     /////////////////
@@ -329,6 +358,15 @@ function engineGame(options) {
         // illegal move
         if (move === null) return 'snapback';
 
+        if (bestNextMove !== null) {
+            if (move.from === bestNextMove.from && move.to === bestNextMove.to) {
+                console.log(`Great! Your move from ${move.from} to ${move.to} was the best one!`)
+            } else {
+                console.log(`You played move ${move.from} to ${move.to}. But the best move was from ${bestNextMove.from} to ${bestNextMove.to}.`)
+                highlightBestMove(bestNextMove)
+            }
+        }
+
         highlightMove(move);
 
         // TODO: show the strength of this move, and possible an improvment
@@ -343,9 +381,8 @@ function engineGame(options) {
     };
 
     var highlightMove = function(move) {
-        console.log('__ highlightMove ' + move.to);
+        // console.log('__ highlightMove ' + move.to);
 
-        boardEl = $('#board');
         if (move.color === 'w') {
             boardEl.find('.' + squareClass).removeClass('highlight-white');
             boardEl.find('.square-' + move.from).addClass('highlight-white');
@@ -361,6 +398,13 @@ function engineGame(options) {
 
         boardEl.find('.square-' + squareToHighlight)
             .addClass('highlight-' + colorToHighlight);
+    }
+
+    var highlightBestMove = function(move) {
+        boardEl.find('.' + squareClass).removeClass('highlight-best-move');
+
+        boardEl.find('.square-' + move.from).addClass('highlight-best-move');
+        boardEl.find('.square-' + move.to).addClass('highlight-best-move');
     }
 
     var cfg = {
@@ -381,10 +425,12 @@ function engineGame(options) {
     return {
         reset: function() {
             game.reset();
-            uciCmd('setoption name Contempt value 0');
+            uciCmd('setoption name Contempt value 0', computerEngine);
+            uciCmd('setoption name Contempt value 0', humanEngine);
             //uciCmd('setoption name Skill Level value 20');
             this.setSkillLevel(0);
-            uciCmd('setoption name King Safety value 0'); /// Agressive 100 (it's now symetric)
+            uciCmd('setoption name King Safety value 0', computerEngine); /// Agressive 100 (it's now symetric)
+            uciCmd('setoption name King Safety value 0', humanEngine); /// Agressive 100 (it's now symetric)
         },
         loadPgn: function(pgn) { game.load_pgn(pgn); },
         setPlayerColor: function(color) {
@@ -417,16 +463,20 @@ function engineGame(options) {
                 time.depth = "";
             }
             
-            uciCmd('setoption name Skill Level value ' + skill);
-            
+            uciCmd('setoption name Skill Level value ' + skill, computerEngine);
+            uciCmd('setoption name Skill Level value ' + skill, humanEngine);
+
             ///NOTE: Stockfish level 20 does not make errors (intentially), so these numbers have no effect on level 20.
             /// Level 0 starts at 1
             err_prob = Math.round((skill * 6.35) + 1);
             /// Level 0 starts at 10
             max_err = Math.round((skill * -0.5) + 10);
             
-            uciCmd('setoption name Skill Level Maximum Error value ' + max_err);
-            uciCmd('setoption name Skill Level Probability value ' + err_prob);
+            uciCmd('setoption name Skill Level Maximum Error value ' + max_err, computerEngine);
+            uciCmd('setoption name Skill Level Probability value ' + err_prob, computerEngine);
+
+            uciCmd('setoption name Skill Level Maximum Error value ' + max_err, humanEngine);
+            uciCmd('setoption name Skill Level Probability value ' + err_prob, humanEngine);
         },
         setTime: function(baseTime, inc) {
             time = { wtime: baseTime * 1000, btime: baseTime * 1000, winc: inc * 1000, binc: inc * 1000 };
@@ -448,10 +498,16 @@ function engineGame(options) {
             displayStatus();
         },
         start: function() {
-            uciCmd('ucinewgame');
-            uciCmd('isready');
+            uciCmd('ucinewgame', computerEngine);
+            uciCmd('isready', computerEngine);
             computerEngineStatus.engineReady = false;
             computerEngineStatus.search = null;
+
+            uciCmd('ucinewgame', humanEngine);
+            uciCmd('isready', humanEngine);
+            humanEngineStatus.engineReady = false;
+            humanEngineStatus.search = null;
+
             displayStatus();
             prepareMove();
             announced_game_over = false;
