@@ -17,12 +17,11 @@ var calculateScore = function(game, color) {
     }
 
     // if any piece of own color is on the E or D columns, add points
-
     // if any piece of own color is attacking the E or D columns, add points
-
     // if any piece can give check, add points
+    // etc.
 
-    
+    // OR: calculate the best move with stockfish
 
     console.log('Score: ' + score)
     return score;

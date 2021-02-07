@@ -11,15 +11,83 @@ var board,
   playerColor,
   computerColor,
   orientation,
-  engine = new Worker('js/stockfish/src/stockfish.asm.js');;
+  stockfish = new Worker('stockfish/src/stockfish.js');
 
 var init = function() {
   console.log('__ init');
 
-  engine.postMessage('go depth 15');
+  // TODO: make engine depth configurable
+  stockfish.postMessage('go depth 15');
 
-  engine.onmessage = function(event) {
+  stockfish.onmessage = function(event) {
     console.log(event.data);
+    var line;
+
+    if (event && typeof event === "object") {
+      line = event.data;
+    } else {
+      line = event;
+    }
+
+    // console.log("evaler: " + line);
+
+    /// Ignore some output.
+    if (line === "uciok" || line === "readyok" || line.substr(0, 11) === "option name") {
+      return;
+    }
+
+    if (evaluation_el.textContent) {
+      evaluation_el.textContent += "\n";
+    }
+    evaluation_el.textContent += line;
+  };
+
+  stockfish.onmessage = function(event) {
+    var line;
+
+    if (event && typeof event === "object") {
+      line = event.data;
+    } else {
+      line = event;
+    }
+    console.log("Reply: " + line)
+    if(line == 'uciok') {
+      engineStatus.engineLoaded = true;
+    } else if(line == 'readyok') {
+      engineStatus.engineReady = true;
+    } else {
+      var match = line.match(/^bestmove ([a-h][1-8])([a-h][1-8])([qrbn])?/);
+      /// Did the AI move?
+      if(match) {
+        isEngineRunning = false;
+        game.move({from: match[1], to: match[2], promotion: match[3]});
+        prepareMove();
+        uciCmd("eval", evaler)
+        evaluation_el.textContent = "";
+        //uciCmd("eval");
+        /// Is it sending feedback?
+      } else if(match = line.match(/^info .*\bdepth (\d+) .*\bnps (\d+)/)) {
+        engineStatus.search = 'Depth: ' + match[1] + ' Nps: ' + match[2];
+      }
+
+      /// Is it sending feed back with a score?
+      if(match = line.match(/^info .*\bscore (\w+) (-?\d+)/)) {
+        var score = parseInt(match[2]) * (game.turn() == 'w' ? 1 : -1);
+        /// Is it measuring in centipawns?
+        if(match[1] == 'cp') {
+          engineStatus.score = (score / 100.0).toFixed(2);
+          /// Did it find a mate?
+        } else if(match[1] == 'mate') {
+          engineStatus.score = 'Mate in ' + Math.abs(score);
+        }
+
+        /// Is the score bounded?
+        if(match = line.match(/\b(upper|lower)bound\b/)) {
+          engineStatus.score = ((match[1] == 'upper') == (game.turn() == 'w') ? '<= ' : '>= ') + engineStatus.score
+        }
+      }
+    }
+    displayStatus();
   };
 
   // determine whether user has black or white

@@ -2,26 +2,27 @@ function engineGame(options) {
     options = options || {}
     var game = new Chess();
     var board;
-    /// We can load Stockfish via Web Workers or via STOCKFISH() if loaded from a <script> tag.
-    var engine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
-    var evaler = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
-    var engineStatus = {};
+    var boardEl = $('#board');
+
+    // the computer engine plays agains the human
+    var computerEngine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
+    var computerEvaler = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
+    var computerEngineStatus = {};
+    var isComputerEngineRunning = false;
+
+    // the human stockfish engine evaluates every human move, to give real-time feedback
+    var humanEngine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
+    var humanEvaler = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
+    var humanEngineStatus = {};
+    var isHumanEngineRunning = false;
+
     var displayScore = false;
     var time = { wtime: 300000, btime: 300000, winc: 2000, binc: 2000 };
     var playerColor = 'white';
     var clockTimeoutID = null;
-    var isEngineRunning = false;
     var evaluation_el = document.getElementById("evaluation");
     var announced_game_over;
-    // do not pick up pieces if the game is over
-    // only pick up pieces for White
-    var onDragStart = function(source, piece, position, orientation) {
-        var re = playerColor == 'white' ? /^b/ : /^w/
-            if (game.game_over() ||
-                piece.search(re) !== -1) {
-                return false;
-            }
-    };
+    var squareClass = 'square-55d63';
 
     setInterval(function ()
     {
@@ -38,26 +39,27 @@ function engineGame(options) {
     function uciCmd(cmd, which) {
         console.log("UCI: " + cmd);
         
-        (which || engine).postMessage(cmd);
+        (which || computerEngine).postMessage(cmd);
     }
-    uciCmd('uci');
+    uciCmd('uci', computerEngine);
+    uciCmd('uci', humanEngine)
     
-    ///TODO: Eval starting posistions. I suppose the starting positions could be different in different chess varients.
+    ///TODO: Eval starting positions. I suppose the starting positions could be different in different chess varients.
 
     function displayStatus() {
         var status = 'Engine: ';
-        if(!engineStatus.engineLoaded) {
+        if(!computerEngineStatus.engineLoaded) {
             status += 'loading...';
-        } else if(!engineStatus.engineReady) {
+        } else if(!computerEngineStatus.engineReady) {
             status += 'loaded...';
         } else {
             status += 'ready.';
         }
         
-        if(engineStatus.search) {
-            status += '<br>' + engineStatus.search;
-            if(engineStatus.score && displayScore) {
-                status += (engineStatus.score.substr(0, 4) === "Mate" ? " " : ' Score: ') + engineStatus.score;
+        if(computerEngineStatus.search) {
+            status += '<br>' + computerEngineStatus.search;
+            if(computerEngineStatus.score && displayScore) {
+                status += (computerEngineStatus.score.substr(0, 4) === "Mate" ? " " : ' Score: ') + computerEngineStatus.score;
             }
         }
         $('#engineStatus').html(status);
@@ -65,11 +67,11 @@ function engineGame(options) {
 
     function displayClock(color, t) {
         var isRunning = false;
-        if(time.startTime > 0 && color == time.clockColor) {
+        if(time.startTime > 0 && color === time.clockColor) {
             t = Math.max(0, t + time.startTime - Date.now());
             isRunning = true;
         }
-        var id = color == playerColor ? '#time2' : '#time1';
+        var id = color === playerColor ? '#time2' : '#time1';
         var sec = Math.ceil(t / 1000);
         var min = Math.floor(sec / 60);
         sec -= min * 60;
@@ -89,7 +91,7 @@ function engineGame(options) {
 
     function clockTick() {
         updateClock();
-        var t = (time.clockColor == 'white' ? time.wtime : time.btime) + time.startTime - Date.now();
+        var t = (time.clockColor === 'white' ? time.wtime : time.btime) + time.startTime - Date.now();
         var timeToNextSecond = (t % 1000) + 1;
         clockTimeoutID = setTimeout(clockTick, timeToNextSecond);
     }
@@ -102,7 +104,7 @@ function engineGame(options) {
         if(time.startTime > 0) {
             var elapsed = Date.now() - time.startTime;
             time.startTime = null;
-            if(time.clockColor == 'white') {
+            if(time.clockColor === 'white') {
                 time.wtime = Math.max(0, time.wtime - elapsed);
             } else {
                 time.btime = Math.max(0, time.btime - elapsed);
@@ -111,7 +113,7 @@ function engineGame(options) {
     }
 
     function startClock() {
-        if(game.turn() == 'w') {
+        if(game.turn() === 'w') {
             time.wtime += time.winc;
             time.clockColor = 'white';
         } else {
@@ -135,33 +137,61 @@ function engineGame(options) {
         return moves;
     }
 
+    /**
+     * Prepare a move to make, by human or computer
+     */
     function prepareMove() {
+        console.log('Preparing move...')
+
         stopClock();
         $('#pgn').text(game.pgn());
         board.position(game.fen());
         updateClock();
-        var turn = game.turn() == 'w' ? 'white' : 'black';
+
+        var turn = game.turn() === 'w' ? 'white' : 'black';
         if(!game.game_over()) {
-            if(turn != playerColor) {
+            if(turn !== playerColor) {
+                // calculate computer move
                 uciCmd('position startpos moves' + get_moves());
-                uciCmd('position startpos moves' + get_moves(), evaler);
+                uciCmd('position startpos moves' + get_moves(), computerEvaler);
                 evaluation_el.textContent = "";
-                uciCmd("eval", evaler);
+                uciCmd("eval", computerEvaler);
                 
                 if (time && time.wtime) {
                     uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc);
                 } else {
                     uciCmd("go " + (time.depth ? "depth " + time.depth : ""));
                 }
-                isEngineRunning = true;
+                isComputerEngineRunning = true;
+            } else {
+                console.log('Evaluating your move...')
+
+                // calculate computer move
+                uciCmd('position startpos moves' + get_moves());
+                uciCmd('position startpos moves' + get_moves(), humanEvaler);
+                uciCmd("eval", humanEvaler);
+
+                if (time && time.wtime) {
+                    uciCmd("go " + (time.depth ? "depth " + time.depth : "") + " wtime " + time.wtime + " winc " + time.winc + " btime " + time.btime + " binc " + time.binc, humanEngine);
+                } else {
+                    uciCmd("go " + (time.depth ? "depth " + time.depth : ""), humanEngine);
+                }
+
+                isHumanEngineRunning = true;
             }
+
             if(game.history().length >= 2 && !time.depth && !time.nodes) {
                 startClock();
             }
         }
     }
+
+    ///////////////////////////
+    // Computer Engine moves //
+    ///////////////////////////
     
-    evaler.onmessage = function(event) {
+    computerEvaler.onmessage = function(event) {
+        console.log('Computer Evaler callback 1')
         var line;
         
         if (event && typeof event === "object") {
@@ -170,7 +200,7 @@ function engineGame(options) {
             line = event;
         }
         
-        console.log("evaler: " + line);
+        // console.log("evaler: " + line);
         
         /// Ignore some output.
         if (line === "uciok" || line === "readyok" || line.substr(0, 11) === "option name") {
@@ -183,7 +213,8 @@ function engineGame(options) {
         evaluation_el.textContent += line;
     }
 
-    engine.onmessage = function(event) {
+    computerEngine.onmessage = function(event) {
+        console.log('Computer Evaler callback 2')
         var line;
         
         if (event && typeof event === "object") {
@@ -192,47 +223,103 @@ function engineGame(options) {
             line = event;
         }
         console.log("Reply: " + line)
-        if(line == 'uciok') {
-            engineStatus.engineLoaded = true;
-        } else if(line == 'readyok') {
-            engineStatus.engineReady = true;
+        if(line === 'uciok') {
+            computerEngineStatus.engineLoaded = true;
+        } else if(line === 'readyok') {
+            computerEngineStatus.engineReady = true;
         } else {
             var match = line.match(/^bestmove ([a-h][1-8])([a-h][1-8])([qrbn])?/);
             /// Did the AI move?
             if(match) {
-                isEngineRunning = false;
+                isComputerEngineRunning = false;
+                console.log('Moving...')
+
                 game.move({from: match[1], to: match[2], promotion: match[3]});
+                highlightMove({from: match[1], to: match[2], promotion: match[3]})
+
                 prepareMove();
-                uciCmd("eval", evaler)
+                uciCmd("eval", computerEvaler)
                 evaluation_el.textContent = "";
                 //uciCmd("eval");
             /// Is it sending feedback?
             } else if(match = line.match(/^info .*\bdepth (\d+) .*\bnps (\d+)/)) {
-                engineStatus.search = 'Depth: ' + match[1] + ' Nps: ' + match[2];
+                computerEngineStatus.search = 'Depth: ' + match[1] + ' Nps: ' + match[2];
             }
             
             /// Is it sending feed back with a score?
             if(match = line.match(/^info .*\bscore (\w+) (-?\d+)/)) {
-                var score = parseInt(match[2]) * (game.turn() == 'w' ? 1 : -1);
+                var score = parseInt(match[2]) * (game.turn() === 'w' ? 1 : -1);
                 /// Is it measuring in centipawns?
-                if(match[1] == 'cp') {
-                    engineStatus.score = (score / 100.0).toFixed(2);
+                if(match[1] === 'cp') {
+                    computerEngineStatus.score = (score / 100.0).toFixed(2);
                 /// Did it find a mate?
-                } else if(match[1] == 'mate') {
-                    engineStatus.score = 'Mate in ' + Math.abs(score);
+                } else if(match[1] === 'mate') {
+                    computerEngineStatus.score = 'Mate in ' + Math.abs(score);
                 }
                 
                 /// Is the score bounded?
                 if(match = line.match(/\b(upper|lower)bound\b/)) {
-                    engineStatus.score = ((match[1] == 'upper') == (game.turn() == 'w') ? '<= ' : '>= ') + engineStatus.score
+                    computerEngineStatus.score = ((match[1] === 'upper') === (game.turn() === 'w') ? '<= ' : '>= ') + computerEngineStatus.score
                 }
             }
         }
         displayStatus();
     };
 
+    //////////////////////////////
+    // Human Engine evaluations //
+    //////////////////////////////
+
+    humanEvaler.onmessage = function(event) {
+        console.log('Human Evaler callback')
+        var line;
+
+        if (event && typeof event === "object") {
+            line = event.data;
+        } else {
+            line = event;
+        }
+
+        console.log('Reply from human evaler: ' + line);
+
+        isHumanEngineRunning = false;
+    }
+
+    /////////////////
+    // Mouse moves //
+    /////////////////
+
+    // do not pick up pieces if the game is over
+    // only pick up pieces for White
+    var onDragStart = function(source, piece, position, orientation) {
+        var re = playerColor === 'white' ? /^b/ : /^w/;
+        if (game.game_over() || piece.search(re) !== -1) {
+            return false;
+        }
+
+        var possibleMoves = game.moves({square: source});
+        for (var i = 0; i < possibleMoves.length; i++) {
+            var possibleSquare = getSquare(possibleMoves[i])
+            boardEl.find('.square-' + possibleSquare).addClass('highlight-possible-move');
+        }
+    };
+
+    var getSquare = function(move) {
+        var cleanedMove = move
+            .replace('#', '')
+            .replace('+', '')
+            .replace('=', '')
+            .replace('Q', '')
+            .replace('x', '')
+
+        return cleanedMove.substr(cleanedMove.length - 2, 2)
+    };
+
     var onDrop = function(source, target) {
-        // see if the move is legal
+        // remove the highlighted possible moves
+        boardEl.find('*').removeClass('highlight-possible-move');
+
+        // see if the move is legal; if it is: make the human move
         var move = game.move({
             from: source,
             to: target,
@@ -241,6 +328,10 @@ function engineGame(options) {
 
         // illegal move
         if (move === null) return 'snapback';
+
+        highlightMove(move);
+
+        // TODO: show the strength of this move, and possible an improvment
 
         prepareMove();
     };
@@ -251,6 +342,27 @@ function engineGame(options) {
         board.position(game.fen());
     };
 
+    var highlightMove = function(move) {
+        console.log('__ highlightMove ' + move.to);
+
+        boardEl = $('#board');
+        if (move.color === 'w') {
+            boardEl.find('.' + squareClass).removeClass('highlight-white');
+            boardEl.find('.square-' + move.from).addClass('highlight-white');
+            squareToHighlight = move.to;
+            colorToHighlight = 'white';
+        }
+        else {
+            boardEl.find('.square-55d63').removeClass('highlight-black');
+            boardEl.find('.square-' + move.from).addClass('highlight-black');
+            squareToHighlight = move.to;
+            colorToHighlight = 'black';
+        }
+
+        boardEl.find('.square-' + squareToHighlight)
+            .addClass('highlight-' + colorToHighlight);
+    }
+
     var cfg = {
         showErrors: true,
         draggable: true,
@@ -259,6 +371,10 @@ function engineGame(options) {
         onDrop: onDrop,
         onSnapEnd: onSnapEnd
     };
+
+    //////////
+    // MAIN //
+    //////////
 
     board = new ChessBoard('board', cfg);
 
@@ -334,18 +450,18 @@ function engineGame(options) {
         start: function() {
             uciCmd('ucinewgame');
             uciCmd('isready');
-            engineStatus.engineReady = false;
-            engineStatus.search = null;
+            computerEngineStatus.engineReady = false;
+            computerEngineStatus.search = null;
             displayStatus();
             prepareMove();
             announced_game_over = false;
         },
         undo: function() {
-            if(isEngineRunning)
+            if(isComputerEngineRunning)
                 return false;
             game.undo();
             game.undo();
-            engineStatus.search = null;
+            computerEngineStatus.search = null;
             displayStatus();
             prepareMove();
             return true;
