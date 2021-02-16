@@ -4,6 +4,9 @@ function engineGame(options) {
     var board;
     var boardEl = $('#board');
 
+    var canvas;
+    var ctx;
+
     // the computer engine plays agains the human
     var computerEngine = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
     var computerEvaluator = typeof STOCKFISH === "function" ? STOCKFISH() : new Worker(options.stockfishjs || 'stockfish.js');
@@ -380,8 +383,49 @@ function engineGame(options) {
         board.position(game.fen());
     };
 
+    var drawArrowOld = function(context, fromx, fromy, tox, toy, r) {
+        var x_center = tox;
+        var y_center = toy;
+        var angle, x, y;
+
+        context.beginPath();
+
+        angle = Math.atan2(toy-fromy,tox-fromx)
+        x = r*Math.cos(angle) + x_center;
+        y = r*Math.sin(angle) + y_center;
+
+        context.moveTo(x, y);
+
+        angle += (1/3)*(2*Math.PI)
+        x = r*Math.cos(angle) + x_center;
+        y = r*Math.sin(angle) + y_center;
+
+        context.lineTo(x, y);
+
+        angle += (1/3)*(2*Math.PI)
+        x = r*Math.cos(angle) + x_center;
+        y = r*Math.sin(angle) + y_center;
+
+        context.lineTo(x, y);
+        context.closePath();
+        context.fill();
+    }
+
+    var drawArrow = function(move) {
+        console.info('Drawing arrow...')
+        ctx.beginPath()
+        ctx.lineWidth = "5";
+        ctx.lineWidth = "5";
+        ctx.strokeStyle = "green"; // Green path
+        ctx.moveTo(0, 75);
+        ctx.lineTo(250, 75);
+        ctx.stroke(); // Draw it
+    }
+
     var highlightMove = function(move) {
         // console.log('__ highlightMove ' + move.to);
+
+        drawArrow(move);
 
         if (move.color === 'w') {
             boardEl.find('.' + squareClass).removeClass('highlight-white');
@@ -421,6 +465,8 @@ function engineGame(options) {
     //////////
 
     board = new ChessBoard('board', cfg);
+    canvas = document.getElementById('drawing_canvas')
+    ctx = canvas.getContext("2d");
 
     return {
         reset: function() {
